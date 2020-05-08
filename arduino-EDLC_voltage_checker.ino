@@ -3,12 +3,15 @@ typedef unsigned short ushort;
 typedef unsigned int uint;
 
 #define PIN_AD A1
-#define PIN_CHARGE 9
+#define PIN_CHARGE 5
 #define PIN_POWER 10
-//#define V_CHARGE 1020 // 4.98[V] = ( 5 * 1020 ) / ( 2^10 - 1 )
-#define V_CHARGE 660 // 3.3[V]
-#define V_DISCHARGE 572 // 2.79[V] = ( 5 * 572 ) / ( 2^10 - 1 )
-#define INTERVAL 100 // ms
+#define V_CHARGE 665 // 3.3[V]
+#define V_DISCHARGE 626 // 3.1[V] = ( 5 * 572 ) / ( 2^10 - 1 )
+#define INTERVAL 10 // ms
+#define LPF_WIDTH 10 // max 255
+#define RES_V 0.00495
+
+ushort lpf( ushort data );
 
 void setup() {
   // put your setup code here, to run once:
@@ -25,50 +28,39 @@ void loop() {
   static uchar suc_state = 0;
   static uint sui_count = 0;
   ushort us_ad = 0;
+  ushort us_ad_avg = 0;
 
+  us_ad = analogRead( PIN_AD );
+  us_ad_avg = lpf( us_ad );
+//  Serial.println( String(us_ad * RES_V ) + "," + String(us_ad_avg * RES_V ) );
+//  Serial.println( String(us_ad ) + "," + String(us_ad_avg ) );
   switch ( suc_state )
   {
   case 0:
-    Serial.println( "chager start" );
     digitalWrite( PIN_CHARGE, HIGH );
     suc_state = 1;
     sui_count = 0;
-    Serial.print( "state:" );
-    Serial.println( suc_state );
     break;
   case 1:
-    us_ad = analogRead( PIN_AD );
-    Serial.println( us_ad );
-    if( V_CHARGE < us_ad ){
-      Serial.println( "charge complate" );
-      delay(500);
+    if( V_CHARGE < us_ad_avg ){
+      delay(1000);
       suc_state = 2;
-      Serial.print( "state:" );
-      Serial.println( suc_state );
     }
     break;
   case 2:
-    Serial.println( "discharge start" );
     digitalWrite( PIN_CHARGE, LOW );
     digitalWrite( PIN_POWER, HIGH );
     suc_state = 3;
-    Serial.print( "state:" );
-    Serial.println( suc_state );
     break;
   case 3:
-    us_ad = analogRead( PIN_AD );
-    Serial.println( us_ad * 0.005 );
-    if( V_CHARGE > us_ad ){
-      Serial.println( "discharge complate" );
+    if( V_DISCHARGE > us_ad_avg ){
       digitalWrite( PIN_POWER, LOW );
       suc_state = 4;
-      Serial.print( "state:" );
-      Serial.println( suc_state );
+      Serial.println( String( us_ad_avg * RES_V ) + "," + String( sui_count / ( 1000.0 / INTERVAL ) ) );
     }
     sui_count++;
     break;
   case 4:
-    Serial.println("end:" + String( sui_count / ( 1000.0 / INTERVAL ) ));
     delay(10000);
     suc_state = 0;
     break;
@@ -78,26 +70,32 @@ void loop() {
     break;
   }
 
-//  delayMicroseconds( INTERVAL );
   delay( INTERVAL );
 
-//    Serial.println("suc_state:" + String(us_ad_tmp));
-//    Serial.println("ad:" + String(us_ad_tmp));
+}
 
-/*
-  switch ( uc_suc_state )
-  {
-  case 0:
-    Serial.println("suc_state:" + String(us_ad_tmp));
-    Serial.println("ad:" + String(us_ad_tmp));
-    break;
-  
-  default:
-    break;
-  }
+ushort lpf( ushort data ){
+    static ushort buf[ LPF_WIDTH ] = {0};
+    static uchar bufp = 0;
+    static uint sum = 0;
+    static uchar init_flg = 0;
+    ushort res;
+    int i;
 
-  delay(1000);
-*/
-//  digitalWrite(PIN_POWER, HIGH);   // turn the LED on (HIGH is the voltage level)
-//  delay(30);                       // wait for a second
+    buf[ bufp ] = data;
+    sum += data;
+    if( init_flg ){
+        sum -= buf[ LPF_WIDTH - bufp - 1 ];
+        res = sum / LPF_WIDTH;
+
+    }
+    else{
+        if( bufp >= LPF_WIDTH - 1 )init_flg = 1;
+        res = sum / ( bufp + 1 );
+    }
+
+    bufp++;
+    if( bufp >= LPF_WIDTH )bufp = 0;
+
+    return res;
 }
